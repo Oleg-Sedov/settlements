@@ -70,9 +70,6 @@
       background-color: #ffebee;
       border-left-color: #c62828;
     }
-    .calc-buttons {
-      margin: 15px 0;
-    }
   </style>
 </head>
 <body>
@@ -111,13 +108,8 @@
   <tbody id="playersList"></tbody>
 </table>
 
-<!-- Кнопки расчёта -->
-<div class="calc-buttons">
-  <button onclick="calculateSettlements('greedy')">Рассчитать быстро</button>
-  <button onclick="calculateSettlements('optimal')">Рассчитать оптимально</button>
-</div>
-
-<!-- Экспорт -->
+<!-- Кнопки расчёта и экспорта -->
+<button onclick="calculateSettlements()">Рассчитать</button>
 <button onclick="exportToExcel()" id="exportBtn" disabled>Экспорт в Excel</button>
 
 <div id="result" class="result" style="display:none;"></div>
@@ -199,7 +191,7 @@
 
     if (k === 0) return [];
     if (k > 14) {
-      throw new Error("Слишком много игроков для точного расчёта (>14). Используйте «Рассчитать быстро».");
+      return greedySettlement(balances, playerNames);
     }
 
     const total = new Array(1 << k).fill(0);
@@ -278,7 +270,7 @@
   }
 
   // === ОСНОВНАЯ ФУНКЦИЯ РАСЧЁТА ===
-  function calculateSettlements(mode) {
+  function calculateSettlements() {
     const resultDiv = document.getElementById('result');
     const errorDiv = document.getElementById('error');
     const exportBtn = document.getElementById('exportBtn');
@@ -296,9 +288,7 @@
     const totalResult = players.reduce((sum, p) => sum + p.result, 0);
     const tolerance = 0.01;
 
-    let hasImbalance = false;
     if (Math.abs(totalResult) > tolerance) {
-      hasImbalance = true;
       if (totalResult < -tolerance) {
         errorDiv.innerHTML = `❗ <strong>Избыток</strong>: игроки вывели на ${(-totalResult).toFixed(2)} ₽ больше, чем внесли.<br>
           Это может означать ошибку в данных. Расчёты выполнены, но могут быть некорректны.`;
@@ -312,39 +302,43 @@
     const balances = players.map(p => p.result);
     const names = players.map(p => p.name);
 
-    try {
-      if (mode === 'greedy') {
-        transactions = greedySettlement(balances, names);
-        resultDiv.innerHTML = `<p><strong>Быстрый расчёт</strong> (жадный алгоритм)</p>` + renderTransactions(transactions);
-      } else if (mode === 'optimal') {
-        transactions = minCashFlowExact(balances, names);
-        resultDiv.innerHTML = `<p><strong>Оптимальный расчёт</strong> (минимальное число транзакций)</p>` + renderTransactions(transactions);
+    // Всегда запускаем жадный алгоритм
+    const greedyTx = greedySettlement(balances, names);
+    let bestTx = greedyTx;
+
+    // Если ненулевых игроков ≤14 — пробуем точный алгоритм
+    const nonZeroCount = balances.filter(b => Math.abs(b) > 0.001).length;
+    if (nonZeroCount <= 14) {
+      try {
+        const exactTx = minCashFlowExact(balances, names);
+        if (exactTx.length < greedyTx.length) {
+          bestTx = exactTx;
+        }
+      } catch (e) {
+        console.warn("Точный алгоритм не сработал:", e.message);
+        // Остаёмся на жадном
       }
-    } catch (e) {
-      console.error("Ошибка:", e);
-      errorDiv.textContent = "Ошибка: " + e.message;
-      errorDiv.style.display = 'block';
-      exportBtn.disabled = true;
-      return;
     }
 
+    transactions = bestTx;
+
+    let html = '';
+    if (transactions.length === 0) {
+      html += '<p>Все в расчёте!</p>';
+    } else {
+      html += '<ul>';
+      transactions.forEach(t => {
+        html += `<li><strong>${t.from}</strong> → <strong>${t.to}</strong>: ${t.amount.toFixed(2)} ₽</li>`;
+      });
+      html += '</ul>';
+    }
+
+    resultDiv.innerHTML = html;
     resultDiv.style.display = 'block';
     exportBtn.disabled = false;
   }
 
-  function renderTransactions(tx) {
-    if (tx.length === 0) {
-      return '<p>Все в расчёте!</p>';
-    }
-    let html = '<ul>';
-    tx.forEach(t => {
-      html += `<li><strong>${t.from}</strong> → <strong>${t.to}</strong>: ${t.amount.toFixed(2)} ₽</li>`;
-    });
-    html += '</ul>';
-    return html;
-  }
-
-  // === ОСТАЛЬНЫЕ ФУНКЦИИ БЕЗ ИЗМЕНЕНИЙ ===
+  // === ОСТАЛЬНЫЕ ФУНКЦИИ ===
   function renderPlayers() {
     const sortedPlayers = [...players].sort((a, b) => b.result - a.result);
     const tbody = document.getElementById('playersList');
