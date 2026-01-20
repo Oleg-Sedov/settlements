@@ -270,84 +270,64 @@
 
   // === ОСНОВНЫЕ ФУНКЦИИ ===
   function calculateSettlements() {
-    const resultDiv = document.getElementById('result');
-    const errorDiv = document.getElementById('error');
-    const exportBtn = document.getElementById('exportBtn');
-    resultDiv.style.display = 'none';
-    errorDiv.style.display = 'none';
-    errorDiv.innerHTML = '';
+  const resultDiv = document.getElementById('result');
+  const errorDiv = document.getElementById('error');
+  const exportBtn = document.getElementById('exportBtn');
+  resultDiv.style.display = 'none';
+  errorDiv.style.display = 'none';
+  errorDiv.innerHTML = '';
 
-    if (players.length < 2) {
-      errorDiv.textContent = 'Нужно минимум два игрока.';
-      errorDiv.style.display = 'block';
-      exportBtn.disabled = true;
-      return;
-    }
-
-    const totalResult = players.reduce((sum, p) => sum + p.result, 0);
-    const tolerance = 0.01;
-
-    let hasImbalance = false;
-    if (Math.abs(totalResult) > tolerance) {
-      hasImbalance = true;
-      if (totalResult < -tolerance) {
-        errorDiv.innerHTML = `❗ <strong>Избыток</strong>: игроки вывели на ${(-totalResult).toFixed(2)} ₽ больше, чем внесли.<br>
-          Это может означать ошибку в данных. Расчёты выполнены, но могут быть некорректны.`;
-      } else {
-        errorDiv.innerHTML = `❗ <strong>Недостача</strong>: игроки вывели на ${totalResult.toFixed(2)} ₽ меньше, чем внесли.<br>
-          Это может означать ошибку в данных. Расчёты выполнены, но могут быть некорректны.`;
-      }
-      errorDiv.style.display = 'block';
-    }
-
-    const balances = players.map(p => p.result);
-    const names = players.map(p => p.name);
-
-    try {
-      transactions = minCashFlowExact(balances, names);
-    } catch (e) {
-      console.error("Ошибка:", e);
-      errorDiv.textContent = "Не удалось рассчитать взаиморасчёты.";
-      errorDiv.style.display = 'block';
-      exportBtn.disabled = true;
-      return;
-    }
-
-    let html = '';
-    if (transactions.length === 0) {
-      html += '<p>Все в расчёте!</p>';
-    } else {
-      html += '<ul>';
-      transactions.forEach(t => {
-        html += `<li><strong>${t.from}</strong> → <strong>${t.to}</strong>: ${t.amount.toFixed(2)} ₽</li>`;
-      });
-      html += '</ul>';
-
-      // === ДОПОЛНИТЕЛЬНАЯ СВОДКА ===
-      const creditors = players.filter(p => p.result > 0.001).sort((a, b) => b.result - a.result);
-      const debtors = players.filter(p => p.result < -0.001).sort((a, b) => a.result - b.result);
-
-      if (creditors.length > 0) {
-        html += `<div class="summary-box"><strong>Кому должны вернуть (недостача у них):</strong><br>`;
-        creditors.forEach(p => {
-          html += `${p.name}: +${p.result.toFixed(2)} ₽<br>`;
-        });
-        html += `</div>`;
-      }
-
-      if (debtors.length > 0) {
-        html += `<div class="summary-box red"><strong>Кто должен вернуть (избыток у них):</strong><br>`;
-        debtors.forEach(p => {
-          html += `${p.name}: ${p.result.toFixed(2)} ₽<br>`;
-        });
-        html += `</div>`;
-      }
-    }
-
-    resultDiv.innerHTML = html;
-    resultDiv.style.display = 'block';
-    exportBtn.disabled = false;
+  if (players.length < 2) {
+    errorDiv.textContent = 'Нужно минимум два игрока.';
+    errorDiv.style.display = 'block';
+    exportBtn.disabled = true;
+    return;
   }
+
+  const totalResult = players.reduce((sum, p) => sum + p.result, 0);
+  const tolerance = 0.01;
+
+  let hasImbalance = false;
+  if (Math.abs(totalResult) > tolerance) {
+    hasImbalance = true;
+    if (totalResult < -tolerance) {
+      errorDiv.innerHTML = `❗ <strong>Избыток</strong>: игроки вывели на ${(-totalResult).toFixed(2)} ₽ больше, чем внесли.<br>
+        Это может означать ошибку в данных. Расчёты выполнены, но могут быть некорректны.`;
+    } else {
+      errorDiv.innerHTML = `❗ <strong>Недостача</strong>: игроки вывели на ${totalResult.toFixed(2)} ₽ меньше, чем внесли.<br>
+        Это может означать ошибку в данных. Расчёты выполнены, но могут быть некорректны.`;
+    }
+    errorDiv.style.display = 'block';
+  }
+
+  const balances = players.map(p => p.result);
+  const names = players.map(p => p.name);
+
+  try {
+    transactions = minCashFlowExact(balances, names);
+  } catch (e) {
+    console.error("Ошибка:", e);
+    errorDiv.textContent = "Не удалось рассчитать взаиморасчёты.";
+    errorDiv.style.display = 'block';
+    exportBtn.disabled = true;
+    return;
+  }
+
+  let html = '';
+  if (transactions.length === 0) {
+    html += '<p>Все в расчёте!</p>';
+  } else {
+    html += '<ul>';
+    transactions.forEach(t => {
+      html += `<li><strong>${t.from}</strong> → <strong>${t.to}</strong>: ${t.amount.toFixed(2)} ₽</li>`;
+    });
+    html += '</ul>';
+  }
+
+  resultDiv.innerHTML = html;
+  resultDiv.style.display = 'block';
+  exportBtn.disabled = false;
+}
 
   function renderPlayers() {
     const sortedPlayers = [...players].sort((a, b) => b.result - a.result);
