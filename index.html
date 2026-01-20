@@ -70,6 +70,9 @@
       background-color: #ffebee;
       border-left-color: #c62828;
     }
+    .calc-buttons {
+      margin: 15px 0;
+    }
   </style>
 </head>
 <body>
@@ -108,8 +111,13 @@
   <tbody id="playersList"></tbody>
 </table>
 
-<!-- Кнопки расчёта и экспорта -->
-<button onclick="calculateSettlements()">Рассчитать</button>
+<!-- Кнопки расчёта -->
+<div class="calc-buttons">
+  <button onclick="calculateSettlements('greedy')">Рассчитать быстро</button>
+  <button onclick="calculateSettlements('optimal')">Рассчитать оптимально</button>
+</div>
+
+<!-- Экспорт -->
 <button onclick="exportToExcel()" id="exportBtn" disabled>Экспорт в Excel</button>
 
 <div id="result" class="result" style="display:none;"></div>
@@ -147,7 +155,7 @@
     return isNaN(num) ? NaN : num;
   }
 
-  // === АЛГОРИТМЫ РАСЧЁТА ===
+  // === ЖАДНЫЙ АЛГОРИТМ ===
   function greedySettlement(balances, names) {
     const debtors = [];
     const creditors = [];
@@ -178,6 +186,7 @@
     return tx;
   }
 
+  // === ТОЧНЫЙ АЛГОРИТМ (DP по подмножествам) ===
   function minCashFlowExact(netBalances, names) {
     const n = netBalances.length;
     if (n === 0) return [];
@@ -190,7 +199,7 @@
 
     if (k === 0) return [];
     if (k > 14) {
-      return greedySettlement(balances, playerNames);
+      throw new Error("Слишком много игроков для точного расчёта (>14). Используйте «Рассчитать быстро».");
     }
 
     const total = new Array(1 << k).fill(0);
@@ -268,67 +277,74 @@
     return allTransactions;
   }
 
-  // === ОСНОВНЫЕ ФУНКЦИИ ===
-  function calculateSettlements() {
-  const resultDiv = document.getElementById('result');
-  const errorDiv = document.getElementById('error');
-  const exportBtn = document.getElementById('exportBtn');
-  resultDiv.style.display = 'none';
-  errorDiv.style.display = 'none';
-  errorDiv.innerHTML = '';
+  // === ОСНОВНАЯ ФУНКЦИЯ РАСЧЁТА ===
+  function calculateSettlements(mode) {
+    const resultDiv = document.getElementById('result');
+    const errorDiv = document.getElementById('error');
+    const exportBtn = document.getElementById('exportBtn');
+    resultDiv.style.display = 'none';
+    errorDiv.style.display = 'none';
+    errorDiv.innerHTML = '';
 
-  if (players.length < 2) {
-    errorDiv.textContent = 'Нужно минимум два игрока.';
-    errorDiv.style.display = 'block';
-    exportBtn.disabled = true;
-    return;
-  }
-
-  const totalResult = players.reduce((sum, p) => sum + p.result, 0);
-  const tolerance = 0.01;
-
-  let hasImbalance = false;
-  if (Math.abs(totalResult) > tolerance) {
-    hasImbalance = true;
-    if (totalResult < -tolerance) {
-      errorDiv.innerHTML = `❗ <strong>Избыток</strong>: игроки вывели на ${(-totalResult).toFixed(2)} ₽ больше, чем внесли.<br>
-        Это может означать ошибку в данных. Расчёты выполнены, но могут быть некорректны.`;
-    } else {
-      errorDiv.innerHTML = `❗ <strong>Недостача</strong>: игроки вывели на ${totalResult.toFixed(2)} ₽ меньше, чем внесли.<br>
-        Это может означать ошибку в данных. Расчёты выполнены, но могут быть некорректны.`;
+    if (players.length < 2) {
+      errorDiv.textContent = 'Нужно минимум два игрока.';
+      errorDiv.style.display = 'block';
+      exportBtn.disabled = true;
+      return;
     }
-    errorDiv.style.display = 'block';
+
+    const totalResult = players.reduce((sum, p) => sum + p.result, 0);
+    const tolerance = 0.01;
+
+    let hasImbalance = false;
+    if (Math.abs(totalResult) > tolerance) {
+      hasImbalance = true;
+      if (totalResult < -tolerance) {
+        errorDiv.innerHTML = `❗ <strong>Избыток</strong>: игроки вывели на ${(-totalResult).toFixed(2)} ₽ больше, чем внесли.<br>
+          Это может означать ошибку в данных. Расчёты выполнены, но могут быть некорректны.`;
+      } else {
+        errorDiv.innerHTML = `❗ <strong>Недостача</strong>: игроки вывели на ${totalResult.toFixed(2)} ₽ меньше, чем внесли.<br>
+          Это может означать ошибку в данных. Расчёты выполнены, но могут быть некорректны.`;
+      }
+      errorDiv.style.display = 'block';
+    }
+
+    const balances = players.map(p => p.result);
+    const names = players.map(p => p.name);
+
+    try {
+      if (mode === 'greedy') {
+        transactions = greedySettlement(balances, names);
+        resultDiv.innerHTML = `<p><strong>Быстрый расчёт</strong> (жадный алгоритм)</p>` + renderTransactions(transactions);
+      } else if (mode === 'optimal') {
+        transactions = minCashFlowExact(balances, names);
+        resultDiv.innerHTML = `<p><strong>Оптимальный расчёт</strong> (минимальное число транзакций)</p>` + renderTransactions(transactions);
+      }
+    } catch (e) {
+      console.error("Ошибка:", e);
+      errorDiv.textContent = "Ошибка: " + e.message;
+      errorDiv.style.display = 'block';
+      exportBtn.disabled = true;
+      return;
+    }
+
+    resultDiv.style.display = 'block';
+    exportBtn.disabled = false;
   }
 
-  const balances = players.map(p => p.result);
-  const names = players.map(p => p.name);
-
-  try {
-    transactions = minCashFlowExact(balances, names);
-  } catch (e) {
-    console.error("Ошибка:", e);
-    errorDiv.textContent = "Не удалось рассчитать взаиморасчёты.";
-    errorDiv.style.display = 'block';
-    exportBtn.disabled = true;
-    return;
-  }
-
-  let html = '';
-  if (transactions.length === 0) {
-    html += '<p>Все в расчёте!</p>';
-  } else {
-    html += '<ul>';
-    transactions.forEach(t => {
+  function renderTransactions(tx) {
+    if (tx.length === 0) {
+      return '<p>Все в расчёте!</p>';
+    }
+    let html = '<ul>';
+    tx.forEach(t => {
       html += `<li><strong>${t.from}</strong> → <strong>${t.to}</strong>: ${t.amount.toFixed(2)} ₽</li>`;
     });
     html += '</ul>';
+    return html;
   }
 
-  resultDiv.innerHTML = html;
-  resultDiv.style.display = 'block';
-  exportBtn.disabled = false;
-}
-
+  // === ОСТАЛЬНЫЕ ФУНКЦИИ БЕЗ ИЗМЕНЕНИЙ ===
   function renderPlayers() {
     const sortedPlayers = [...players].sort((a, b) => b.result - a.result);
     const tbody = document.getElementById('playersList');
