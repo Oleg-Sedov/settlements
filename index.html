@@ -415,123 +415,125 @@
   }
 
   function importFromCSV() {
-    const fileInput = document.getElementById('csvFile');
-    const file = fileInput.files[0];
-    const infoDiv = document.getElementById('csvInfo');
-    const errorDiv = document.getElementById('error');
+  const fileInput = document.getElementById('csvFile');
+  const file = fileInput.files[0];
+  const infoDiv = document.getElementById('csvInfo');
+  const errorDiv = document.getElementById('error');
 
-    errorDiv.style.display = 'none';
-    errorDiv.textContent = '';
-    infoDiv.textContent = '';
+  errorDiv.style.display = 'none';
+  errorDiv.textContent = '';
+  infoDiv.textContent = '';
 
-    if (!file) {
-      errorDiv.textContent = 'Выберите CSV-файл.';
-      errorDiv.style.display = 'block';
-      return;
-    }
+  if (!file) {
+    errorDiv.textContent = 'Выберите CSV-файл.';
+    errorDiv.style.display = 'block';
+    return;
+  }
 
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      const text = e.target.result;
-      try {
-        const lines = text.split(/\r\n|\n/).filter(line => line.trim() !== '');
-        if (lines.length < 2) throw new Error('Файл пуст или содержит только заголовок.');
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const text = e.target.result;
+    try {
+      const lines = text.split(/\r\n|\n/).filter(line => line.trim() !== '');
+      if (lines.length < 2) {
+        throw new Error('Файл пуст или содержит только заголовок.');
+      }
 
-        const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-        const buyInIndex = headers.indexOf('buy_in');
-        const buyOutIndex = headers.indexOf('buy_out');
-        const nicknameIndex = headers.indexOf('player_nickname');
-        const netIndex = headers.indexOf('net');
+      const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+      const buyInIndex = headers.indexOf('buy_in');
+      const buyOutIndex = headers.indexOf('buy_out');
+      const nicknameIndex = headers.indexOf('player_nickname');
+      const netIndex = headers.indexOf('net');
 
-        if (nicknameIndex === -1 || buyInIndex === -1) {
-          throw new Error('Требуются колонки: player_nickname, buy_in');
-        }
+      if (nicknameIndex === -1 || buyInIndex === -1) {
+        throw new Error('Требуются колонки: player_nickname, buy_in');
+      }
 
-        const sampleValues = [];
-        for (let i = 1; i < Math.min(lines.length, 20); i++) {
-          const row = lines[i].split(',').map(cell => cell.trim().replace(/"/g, ''));
-          if (row[buyInIndex]) sampleValues.push(row[buyInIndex]);
-          if (row[buyOutIndex] && row[buyOutIndex] !== '') sampleValues.push(row[buyOutIndex]);
-        }
+      // === ОЧИСТКА ТЕКУЩИХ ДАННЫХ ===
+      players = [];
 
-        const decimalSeparator = detectDecimalSeparator(sampleValues);
-        const playerMap = {};
+      const sampleValues = [];
+      for (let i = 1; i < Math.min(lines.length, 20); i++) {
+        const row = lines[i].split(',').map(cell => cell.trim().replace(/"/g, ''));
+        if (row[buyInIndex]) sampleValues.push(row[buyInIndex]);
+        if (row[buyOutIndex] && row[buyOutIndex] !== '') sampleValues.push(row[buyOutIndex]);
+      }
 
-        for (let i = 1; i < lines.length; i++) {
-          const row = lines[i].split(',').map(cell => cell.trim().replace(/"/g, ''));
-          if (row.length <= nicknameIndex) continue;
+      const decimalSeparator = detectDecimalSeparator(sampleValues);
+      const playerMap = {};
 
-          const nickname = row[nicknameIndex];
-          if (!nickname) continue;
+      let validRows = 0;
+      for (let i = 1; i < lines.length; i++) {
+        const row = lines[i].split(',').map(cell => cell.trim().replace(/"/g, ''));
+        if (row.length <= nicknameIndex) continue;
 
-          const buyInRaw = row[buyInIndex];
-          const buyOutRaw = buyOutIndex !== -1 ? row[buyOutIndex] : '';
-          const netRaw = netIndex !== -1 ? row[netIndex] : '';
+        const nickname = row[nicknameIndex];
+        if (!nickname) continue;
 
-          let buyIn = parseNumberWithSeparator(buyInRaw, decimalSeparator);
-          let buyOut;
+        const buyInRaw = row[buyInIndex];
+        const buyOutRaw = buyOutIndex !== -1 ? row[buyOutIndex] : '';
+        const netRaw = netIndex !== -1 ? row[netIndex] : '';
 
-          if (buyOutRaw === '' || buyOutRaw == null) {
-            if (netRaw !== '' && netRaw != null) {
-              const net = parseNumberWithSeparator(netRaw, decimalSeparator);
-              if (!isNaN(buyIn) && !isNaN(net)) {
-                buyOut = buyIn + net;
-              } else {
-                buyOut = NaN;
-              }
+        let buyIn = parseNumberWithSeparator(buyInRaw, decimalSeparator);
+        let buyOut;
+
+        if (buyOutRaw === '' || buyOutRaw == null) {
+          if (netRaw !== '' && netRaw != null) {
+            const net = parseNumberWithSeparator(netRaw, decimalSeparator);
+            if (!isNaN(buyIn) && !isNaN(net)) {
+              buyOut = buyIn + net;
             } else {
               buyOut = NaN;
             }
           } else {
-            buyOut = parseNumberWithSeparator(buyOutRaw, decimalSeparator);
+            buyOut = NaN;
           }
-
-          if (isNaN(buyIn) || isNaN(buyOut)) {
-            continue;
-          }
-
-          if (!playerMap[nickname]) {
-            playerMap[nickname] = { name: nickname, buyIn: 0, cashOut: 0 };
-          }
-          playerMap[nickname].buyIn += buyIn;
-          playerMap[nickname].cashOut += buyOut;
+        } else {
+          buyOut = parseNumberWithSeparator(buyOutRaw, decimalSeparator);
         }
 
-        const importedPlayers = Object.values(playerMap).map(p => ({
-          name: p.name,
-          buyIn: p.buyIn,
-          cashOut: p.cashOut,
-          result: p.cashOut - p.buyIn
-        }));
+        if (isNaN(buyIn) || isNaN(buyOut)) {
+          continue;
+        }
 
-        importedPlayers.forEach(ip => {
-          const existing = players.find(p => p.name === ip.name);
-          if (existing) {
-            existing.buyIn += ip.buyIn;
-            existing.cashOut += ip.cashOut;
-            existing.result = existing.cashOut - existing.buyIn;
-          } else {
-            players.push(ip);
-          }
-        });
-
-        renderPlayers();
-        infoDiv.textContent = `Загружено ${Object.keys(playerMap).length} игроков. Разделитель: "${decimalSeparator}"`;
-        document.getElementById('exportBtn').disabled = players.length < 2;
-      } catch (err) {
-        errorDiv.textContent = 'Ошибка при обработке CSV: ' + err.message;
-        errorDiv.style.display = 'block';
-        console.error(err);
+        if (!playerMap[nickname]) {
+          playerMap[nickname] = { name: nickname, buyIn: 0, cashOut: 0 };
+        }
+        playerMap[nickname].buyIn += buyIn;
+        playerMap[nickname].cashOut += buyOut;
+        validRows++;
       }
-    };
-    reader.onerror = () => {
-      const errorDiv = document.getElementById('error');
-      errorDiv.textContent = 'Не удалось прочитать файл.';
-      errorDiv.style.display = 'block';
-    };
-    reader.readAsText(file, 'UTF-8');
-  }
 
+      if (validRows === 0) {
+        throw new Error('Не найдено корректных строк с данными.');
+      }
+
+      // Заполняем players напрямую (без слияния!)
+      players = Object.values(playerMap).map(p => ({
+        name: p.name,
+        buyIn: p.buyIn,
+        cashOut: p.cashOut,
+        result: p.cashOut - p.buyIn
+      }));
+
+      renderPlayers();
+      infoDiv.textContent = `Загружено ${Object.keys(playerMap).length} игроков. Разделитель: "${decimalSeparator}"`;
+      document.getElementById('exportBtn').disabled = players.length < 2;
+    } catch (err) {
+      errorDiv.textContent = 'Ошибка при обработке CSV: ' + err.message;
+      errorDiv.style.display = 'block';
+      console.error(err);
+      // Восстанавливаем предыдущее состояние? Нет — CSV должен заменять всё.
+      // Если ошибка — players остаётся пустым (или частично заполненным, но лучше не восстанавливать)
+    }
+  };
+  reader.onerror = () => {
+    const errorDiv = document.getElementById('error');
+    errorDiv.textContent = 'Не удалось прочитать файл.';
+    errorDiv.style.display = 'block';
+  };
+  reader.readAsText(file, 'UTF-8');
+}
   // === ЛЕНИВАЯ ЗАГРУЗКА SHEETJS + ЭКСПОРТ ===
   let sheetJSPromise = null;
 
