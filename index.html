@@ -39,13 +39,18 @@
     }
     .result {
       margin-top: 20px;
-      padding: 10px;
-      background-color: #f0f0f0;
+      padding: 15px;
+      background-color: #f9f9f9;
       border-radius: 5px;
+      border-left: 4px solid #4CAF50;
     }
     .error {
-      color: red;
+      color: #d32f2f;
       margin-top: 10px;
+      padding: 10px;
+      background-color: #ffebee;
+      border-radius: 4px;
+      border-left: 4px solid #d32f2f;
     }
     label {
       display: inline-block;
@@ -54,6 +59,17 @@
     .positive { color: green; font-weight: bold; }
     .negative { color: red; font-weight: bold; }
     .zero { color: black; }
+    .summary-box {
+      margin-top: 15px;
+      padding: 12px;
+      background-color: #e8f5e9;
+      border-radius: 5px;
+      border-left: 4px solid #2e7d32;
+    }
+    .summary-box.red {
+      background-color: #ffebee;
+      border-left-color: #c62828;
+    }
   </style>
 </head>
 <body>
@@ -97,7 +113,7 @@
 <button onclick="exportToExcel()" id="exportBtn" disabled>Экспорт в Excel</button>
 
 <div id="result" class="result" style="display:none;"></div>
-<div id="error" class="error"></div>
+<div id="error" class="error" style="display:none;"></div>
 
 <script>
   let players = [];
@@ -258,17 +274,30 @@
     const errorDiv = document.getElementById('error');
     const exportBtn = document.getElementById('exportBtn');
     resultDiv.style.display = 'none';
-    errorDiv.textContent = '';
+    errorDiv.style.display = 'none';
+    errorDiv.innerHTML = '';
 
     if (players.length < 2) {
       errorDiv.textContent = 'Нужно минимум два игрока.';
+      errorDiv.style.display = 'block';
       exportBtn.disabled = true;
       return;
     }
 
     const totalResult = players.reduce((sum, p) => sum + p.result, 0);
-    if (Math.abs(totalResult) > 0.01) {
-      errorDiv.textContent = `Внимание: сумма всех результатов ≠ 0 (${totalResult.toFixed(2)}). Расчёты могут быть некорректны.`;
+    const tolerance = 0.01;
+
+    let hasImbalance = false;
+    if (Math.abs(totalResult) > tolerance) {
+      hasImbalance = true;
+      if (totalResult < -tolerance) {
+        errorDiv.innerHTML = `❗ <strong>Избыток</strong>: игроки вывели на ${(-totalResult).toFixed(2)} ₽ больше, чем внесли.<br>
+          Это может означать ошибку в данных. Расчёты выполнены, но могут быть некорректны.`;
+      } else {
+        errorDiv.innerHTML = `❗ <strong>Недостача</strong>: игроки вывели на ${totalResult.toFixed(2)} ₽ меньше, чем внесли.<br>
+          Это может означать ошибку в данных. Расчёты выполнены, но могут быть некорректны.`;
+      }
+      errorDiv.style.display = 'block';
     }
 
     const balances = players.map(p => p.result);
@@ -279,6 +308,7 @@
     } catch (e) {
       console.error("Ошибка:", e);
       errorDiv.textContent = "Не удалось рассчитать взаиморасчёты.";
+      errorDiv.style.display = 'block';
       exportBtn.disabled = true;
       return;
     }
@@ -293,6 +323,26 @@
         html += `<li><strong>${t.from}</strong> → <strong>${t.to}</strong>: ${t.amount.toFixed(2)} ₽</li>`;
       });
       html += '</ul>';
+
+      // === ДОПОЛНИТЕЛЬНАЯ СВОДКА ===
+      const creditors = players.filter(p => p.result > 0.001).sort((a, b) => b.result - a.result);
+      const debtors = players.filter(p => p.result < -0.001).sort((a, b) => a.result - b.result); // самые отрицательные
+
+      if (creditors.length > 0) {
+        html += `<div class="summary-box"><strong>Кому должны вернуть (недостача у них):</strong><br>`;
+        creditors.forEach(p => {
+          html += `${p.name}: +${p.result.toFixed(2)} ₽<br>`;
+        });
+        html += `</div>`;
+      }
+
+      if (debtors.length > 0) {
+        html += `<div class="summary-box red"><strong>Кто должен вернуть (избыток у них):</strong><br>`;
+        debtors.forEach(p => {
+          html += `${p.name}: ${p.result.toFixed(2)} ₽<br>`; // отрицательное число
+        });
+        html += `</div>`;
+      }
     }
 
     resultDiv.innerHTML = html;
@@ -345,14 +395,17 @@
     const cashOut = parseInputNumber(cashOutInput.value);
 
     const errorDiv = document.getElementById('error');
+    errorDiv.style.display = 'none';
     errorDiv.textContent = '';
 
     if (!name) {
       errorDiv.textContent = 'Введите имя игрока.';
+      errorDiv.style.display = 'block';
       return;
     }
     if (isNaN(buyIn) || isNaN(cashOut)) {
       errorDiv.textContent = 'Введите корректные числа (можно с точкой или запятой).';
+      errorDiv.style.display = 'block';
       return;
     }
 
@@ -378,11 +431,13 @@
     const infoDiv = document.getElementById('csvInfo');
     const errorDiv = document.getElementById('error');
 
+    errorDiv.style.display = 'none';
     errorDiv.textContent = '';
     infoDiv.textContent = '';
 
     if (!file) {
       errorDiv.textContent = 'Выберите CSV-файл.';
+      errorDiv.style.display = 'block';
       return;
     }
 
@@ -476,11 +531,14 @@
         document.getElementById('exportBtn').disabled = players.length < 2;
       } catch (err) {
         errorDiv.textContent = 'Ошибка при обработке CSV: ' + err.message;
+        errorDiv.style.display = 'block';
         console.error(err);
       }
     };
     reader.onerror = () => {
-      document.getElementById('error').textContent = 'Не удалось прочитать файл.';
+      const errorDiv = document.getElementById('error');
+      errorDiv.textContent = 'Не удалось прочитать файл.';
+      errorDiv.style.display = 'block';
     };
     reader.readAsText(file, 'UTF-8');
   }
@@ -504,12 +562,14 @@
 
   async function exportToExcel() {
     const errorDiv = document.getElementById('error');
+    errorDiv.style.display = 'none';
     errorDiv.textContent = '';
 
     try {
       await loadSheetJS();
     } catch (e) {
       errorDiv.textContent = e.message;
+      errorDiv.style.display = 'block';
       return;
     }
 
@@ -542,6 +602,7 @@
       XLSX.writeFile(wb, "взаиморасчёты_финал.xlsx");
     } catch (e) {
       errorDiv.textContent = "Ошибка при создании Excel: " + e.message;
+      errorDiv.style.display = 'block';
       console.error(e);
     }
   }
