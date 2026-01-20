@@ -517,7 +517,7 @@
       }));
 
       renderPlayers();
-      infoDiv.textContent = `Загружено ${Object.keys(playerMap).length} игроков. Разделитель: "${decimalSeparator}"`;
+      infoDiv.textContent = `Загружено ${Object.keys(playerMap).length} игроков.`;
       document.getElementById('exportBtn').disabled = players.length < 2;
     } catch (err) {
       errorDiv.textContent = 'Ошибка при обработке CSV: ' + err.message;
@@ -574,7 +574,7 @@
         p.result
       ]);
       const wsData = XLSX.utils.aoa_to_sheet([
-        ["Игрок", "Бай-ин (Σ)", "Кэш-аут (Σ)", "Результат"],
+        ["Игрок", "Бай-ин", "Кэш-аут", "Результат"],
         ...dataSheet
       ]);
       XLSX.utils.book_append_sheet(wb, wsData, "Исходные данные");
@@ -582,7 +582,7 @@
       const calcRows = [["Статус", transactions.length === 0 ? "Все в расчёте" : "См. переводы"]];
       if (transactions.length > 0) {
         calcRows.push([]);
-        calcRows.push(["Кто платит", "Кому получает", "Сумма"]);
+        calcRows.push(["Кто платит", "Кому платит", "Сумма"]);
         transactions.forEach(t => {
           calcRows.push([t.from, t.to, t.amount]);
         });
@@ -590,7 +590,7 @@
       const wsCalc = XLSX.utils.aoa_to_sheet(calcRows);
       XLSX.utils.book_append_sheet(wb, wsCalc, "Расчёты");
 
-      XLSX.writeFile(wb, "взаиморасчёты_финал.xlsx");
+      XLSX.writeFile(wb, "взаиморасчёты.xlsx");
     } catch (e) {
       errorDiv.textContent = "Ошибка при создании Excel: " + e.message;
       errorDiv.style.display = 'block';
