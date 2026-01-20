@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Взаиморасчёты</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 950px;
+      margin: 30px auto;
+      padding: 20px;
+    }
+    h1 {
+      text-align: center;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: center;
+    }
+    input[type="text"] {
+      padding: 6px;
+      margin: 4px;
+      width: 90px;
+    }
+    button {
+      padding: 8px 16px;
+      margin: 5px;
+      cursor: pointer;
+    }
+    .section {
+      margin: 20px 0;
+    }
+    .result {
+      margin-top: 20px;
+      padding: 10px;
+      background-color: #f0f0f0;
+      border-radius: 5px;
+    }
+    .error {
+      color: red;
+      margin-top: 10px;
+    }
+    label {
+      display: inline-block;
+      margin-right: 10px;
+    }
+    .positive { color: green; font-weight: bold; }
+    .negative { color: red; font-weight: bold; }
+    .zero { color: black; }
+  </style>
+</head>
+<body>
+
+<h1>Расчет результатов</h1>
+
+<!-- Ручной ввод -->
+<div class="section">
+  <h3>Добавить игрока вручную</h3>
+  <input type="text" id="playerName" placeholder="Имя" />
+  <input type="text" inputmode="decimal" id="buyIn" placeholder="Бай-ин" />
+  <input type="text" inputmode="decimal" id="cashOut" placeholder="Кэш-аут" />
+  <button onclick="addPlayer()">Добавить</button>
+</div>
+
+<!-- Импорт CSV -->
+<div class="section">
+  <h3>Импорт из CSV</h3>
+  <label for="csvFile">Выберите CSV-файл:</label>
+  <input type="file" id="csvFile" accept=".csv" />
+  <button onclick="importFromCSV()">Загрузить</button>
+  <div id="csvInfo" style="font-size: 0.9em; color: #555;"></div>
+</div>
+
+<!-- Таблица игроков -->
+<table id="playersTable">
+  <thead>
+    <tr>
+      <th>Игрок</th>
+      <th>Бай-ин</th>
+      <th>Кэш-аут</th>
+      <th>Результат</th>
+      <th>Действие</th>
+    </tr>
+  </thead>
+  <tbody id="playersList"></tbody>
+</table>
+
+<!-- Кнопки расчёта и экспорта -->
+<button onclick="calculateSettlements()">Рассчитать</button>
+<button onclick="exportToExcel()" id="exportBtn" disabled>Экспорт в Excel</button>
+
+<div id="result" class="result" style="display:none;"></div>
+<div id="error" class="error"></div>
+
+<script>
+  let players = [];
+  let transactions = [];
+
+  // === УТИЛИТЫ ===
+  function parseInputNumber(value) {
+    if (!value) return NaN;
+    const cleaned = value.trim().replace(/,/g, '.');
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? NaN : num;
+  }
+
+  function detectDecimalSeparator(sampleValues) {
+    let dotCount = 0, commaCount = 0;
+    const numberRegex = /^-?[\d.,]+$/;
+    for (const val of sampleValues) {
+      if (typeof val !== 'string' || !numberRegex.test(val)) continue;
+      if (val.includes('.')) dotCount++;
+      if (val.includes(',')) commaCount++;
+    }
+    return commaCount > dotCount ? ',' : '.';
+  }
+
+  function parseNumberWithSeparator(str, decimalSeparator) {
+    if (typeof str !== 'string') return parseFloat(str);
+    let clean = str.trim();
+    if (decimalSeparator === ',') clean = clean.replace(/\s/g, '').replace(',', '.');
+    clean = clean.replace(/[^0-9.\-]/g, '');
+    const num = parseFloat(clean);
+    return isNaN(num) ? NaN : num;
+  }
+
+  // === АЛГОРИТМЫ РАСЧЁТА ===
+  function greedySettlement(balances, names) {
+    const debtors = [];
+    const creditors = [];
+    for (let i = 0; i < balances.length; i++) {
+      const bal = balances[i];
+      if (bal > 0.001) creditors.push({ name: names[i], amount: bal });
+      else if (bal < -0.001) debtors.push({ name: names[i], amount: -bal });
+    }
+    creditors.sort((a, b) => b.amount - a.amount);
+    debtors.sort((a, b) => b.amount - a.amount);
+
+    const tx = [];
+    let i = 0, j = 0;
+    while (i < debtors.length && j < creditors.length) {
+      const debtor = debtors[i];
+      const creditor = creditors[j];
+      const amount = Math.min(debtor.amount, creditor.amount);
+      tx.push({
+        from: debtor.name,
+        to: creditor.name,
+        amount: parseFloat(amount.toFixed(2))
+      });
+      debtor.amount -= amount;
+      creditor.amount -= amount;
+      if (debtor.amount < 0.001) i++;
+      if (creditor.amount < 0.001) j++;
+    }
+    return tx;
+  }
+
+  function minCashFlowExact(netBalances, names) {
+    const n = netBalances.length;
+    if (n === 0) return [];
+
+    const filtered = netBalances.map((bal, i) => ({ bal, name: names[i] }))
+                                .filter(item => Math.abs(item.bal) > 0.001);
+    const balances = filtered.map(f => f.bal);
+    const playerNames = filtered.map(f => f.name);
+    const k = balances.length;
+
+    if (k === 0) return [];
+    if (k > 12) {
+      return greedySettlement(balances, playerNames);
+    }
+
+    const total = new Array(1 << k).fill(0);
+    for (let mask = 1; mask < (1 << k); mask++) {
+      for (let i = 0; i < k; i++) {
+        if (mask & (1 << i)) {
+          total[mask] = total[mask ^ (1 << i)] + balances[i];
+          break;
+        }
+      }
+    }
+
+    const dp = new Array(1 << k).fill(0);
+    const parent = new Array(1 << k).fill(0);
+
+    for (let mask = 1; mask < (1 << k); mask++) {
+      for (let sub = mask; sub > 0; sub = (sub - 1) & mask) {
+        if (Math.abs(total[sub]) < 0.001 && dp[mask ^ sub] + 1 > dp[mask]) {
+          dp[mask] = dp[mask ^ sub] + 1;
+          parent[mask] = sub;
+        }
+      }
+    }
+
+    function recoverSubsets(mask) {
+      const subsets = [];
+      while (mask) {
+        const sub = parent[mask];
+        subsets.push(sub);
+        mask ^= sub;
+      }
+      return subsets;
+    }
+
+    const fullMask = (1 << k) - 1;
+    const zeroSubsets = recoverSubsets(fullMask);
+    const allTransactions = [];
+
+    for (const subset of zeroSubsets) {
+      const indices = [];
+      for (let i = 0; i < k; i++) {
+        if (subset & (1 << i)) indices.push(i);
+      }
+
+      const localBalances = indices.map(i => balances[i]);
+      const localNames = indices.map(i => playerNames[i]);
+
+      const debtors = [];
+      const creditors = [];
+      for (let i = 0; i < localBalances.length; i++) {
+        const bal = localBalances[i];
+        if (bal > 0.001) creditors.push({ name: localNames[i], amount: bal });
+        else if (bal < -0.001) debtors.push({ name: localNames[i], amount: -bal });
+      }
+
+      let i = 0, j = 0;
+      while (i < debtors.length && j < creditors.length) {
+        const debtor = debtors[i];
+        const creditor = creditors[j];
+        const amount = Math.min(debtor.amount, creditor.amount);
+        allTransactions.push({
+          from: debtor.name,
+          to: creditor.name,
+          amount: parseFloat(amount.toFixed(2))
+        });
+
+        debtor.amount -= amount;
+        creditor.amount -= amount;
+
+        if (debtor.amount < 0.001) i++;
+        if (creditor.amount < 0.001) j++;
+      }
+    }
+
+    return allTransactions;
+  }
+
+  // === ОСНОВНЫЕ ФУНКЦИИ ===
+  function calculateSettlements() {
+    const resultDiv = document.getElementById('result');
+    const errorDiv = document.getElementById('error');
+    const exportBtn = document.getElementById('exportBtn');
+    resultDiv.style.display = 'none';
+    errorDiv.textContent = '';
+
+    if (players.length < 2) {
+      errorDiv.textContent = 'Нужно минимум два игрока.';
+      exportBtn.disabled = true;
+      return;
+    }
+
+    const totalResult = players.reduce((sum, p) => sum + p.result, 0);
+    if (Math.abs(totalResult) > 0.01) {
+      errorDiv.textContent = `Внимание: сумма всех результатов ≠ 0 (${totalResult.toFixed(2)}). Расчёты могут быть некорректны.`;
+    }
+
+    const balances = players.map(p => p.result);
+    const names = players.map(p => p.name);
+
+    try {
+      transactions = minCashFlowExact(balances, names);
+    } catch (e) {
+      console.error("Ошибка:", e);
+      errorDiv.textContent = "Не удалось рассчитать взаиморасчёты.";
+      exportBtn.disabled = true;
+      return;
+    }
+
+    let html = '';
+    if (transactions.length === 0) {
+      html += '<p>Все в расчёте!</p>';
+    } else {
+      html += `<p>Минимальное число транзакций: <strong>${transactions.length}</strong></p>`;
+      html += '<ul>';
+      transactions.forEach(t => {
+        html += `<li><strong>${t.from}</strong> → <strong>${t.to}</strong>: ${t.amount.toFixed(2)} ₽</li>`;
+      });
+      html += '</ul>';
+    }
+
+    resultDiv.innerHTML = html;
+    resultDiv.style.display = 'block';
+    exportBtn.disabled = false;
+  }
+
+  function renderPlayers() {
+    const sortedPlayers = [...players].sort((a, b) => b.result - a.result);
+    const tbody = document.getElementById('playersList');
+    tbody.innerHTML = '';
+
+    sortedPlayers.forEach((player, idx) => {
+      const originalIndex = players.findIndex(p =>
+        p.name === player.name &&
+        p.buyIn === player.buyIn &&
+        p.cashOut === player.cashOut
+      );
+
+      const row = tbody.insertRow();
+      row.insertCell(0).textContent = player.name;
+      row.insertCell(1).textContent = player.buyIn.toFixed(2);
+      row.insertCell(2).textContent = player.cashOut.toFixed(2);
+
+      const resultCell = row.insertCell(3);
+      const resultValue = player.result;
+      resultCell.textContent = resultValue.toFixed(2);
+      if (resultValue > 0.001) resultCell.className = 'positive';
+      else if (resultValue < -0.001) resultCell.className = 'negative';
+      else resultCell.className = 'zero';
+
+      const actionsCell = row.insertCell(4);
+      const removeBtn = document.createElement('button');
+      removeBtn.textContent = 'Удалить';
+      removeBtn.onclick = () => {
+        players.splice(originalIndex, 1);
+        renderPlayers();
+      };
+      actionsCell.appendChild(removeBtn);
+    });
+  }
+
+  function addPlayer() {
+    const nameInput = document.getElementById('playerName');
+    const buyInInput = document.getElementById('buyIn');
+    const cashOutInput = document.getElementById('cashOut');
+
+    const name = nameInput.value.trim();
+    const buyIn = parseInputNumber(buyInInput.value);
+    const cashOut = parseInputNumber(cashOutInput.value);
+
+    const errorDiv = document.getElementById('error');
+    errorDiv.textContent = '';
+
+    if (!name) {
+      errorDiv.textContent = 'Введите имя игрока.';
+      return;
+    }
+    if (isNaN(buyIn) || isNaN(cashOut)) {
+      errorDiv.textContent = 'Введите корректные числа (можно с точкой или запятой).';
+      return;
+    }
+
+    const existing = players.find(p => p.name === name);
+    if (existing) {
+      existing.buyIn += buyIn;
+      existing.cashOut += cashOut;
+      existing.result = existing.cashOut - existing.buyIn;
+    } else {
+      players.push({ name, buyIn, cashOut, result: cashOut - buyIn });
+    }
+
+    renderPlayers();
+    nameInput.value = '';
+    buyInInput.value = '';
+    cashOutInput.value = '';
+    nameInput.focus();
+  }
+
+  function importFromCSV() {
+    const fileInput = document.getElementById('csvFile');
+    const file = fileInput.files[0];
+    const infoDiv = document.getElementById('csvInfo');
+    const errorDiv = document.getElementById('error');
+
+    errorDiv.textContent = '';
+    infoDiv.textContent = '';
+
+    if (!file) {
+      errorDiv.textContent = 'Выберите CSV-файл.';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const text = e.target.result;
+      try {
+        const lines = text.split(/\r\n|\n/).filter(line => line.trim() !== '');
+        if (lines.length < 2) throw new Error('Файл пуст или содержит только заголовок.');
+
+        const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+        const buyInIndex = headers.indexOf('buy_in');
+        const buyOutIndex = headers.indexOf('buy_out');
+        const nicknameIndex = headers.indexOf('player_nickname');
+        const netIndex = headers.indexOf('net');
+
+        if (nicknameIndex === -1 || buyInIndex === -1) {
+          throw new Error('Требуются колонки: player_nickname, buy_in');
+        }
+
+        const sampleValues = [];
+        for (let i = 1; i < Math.min(lines.length, 20); i++) {
+          const row = lines[i].split(',').map(cell => cell.trim().replace(/"/g, ''));
+          if (row[buyInIndex]) sampleValues.push(row[buyInIndex]);
+          if (row[buyOutIndex] && row[buyOutIndex] !== '') sampleValues.push(row[buyOutIndex]);
+        }
+
+        const decimalSeparator = detectDecimalSeparator(sampleValues);
+        const playerMap = {};
+
+        for (let i = 1; i < lines.length; i++) {
+          const row = lines[i].split(',').map(cell => cell.trim().replace(/"/g, ''));
+          if (row.length <= nicknameIndex) continue;
+
+          const nickname = row[nicknameIndex];
+          if (!nickname) continue;
+
+          const buyInRaw = row[buyInIndex];
+          const buyOutRaw = buyOutIndex !== -1 ? row[buyOutIndex] : '';
+          const netRaw = netIndex !== -1 ? row[netIndex] : '';
+
+          let buyIn = parseNumberWithSeparator(buyInRaw, decimalSeparator);
+          let buyOut;
+
+          if (buyOutRaw === '' || buyOutRaw == null) {
+            if (netRaw !== '' && netRaw != null) {
+              const net = parseNumberWithSeparator(netRaw, decimalSeparator);
+              if (!isNaN(buyIn) && !isNaN(net)) {
+                buyOut = buyIn + net;
+              } else {
+                buyOut = NaN;
+              }
+            } else {
+              buyOut = NaN;
+            }
+          } else {
+            buyOut = parseNumberWithSeparator(buyOutRaw, decimalSeparator);
+          }
+
+          if (isNaN(buyIn) || isNaN(buyOut)) {
+            continue;
+          }
+
+          if (!playerMap[nickname]) {
+            playerMap[nickname] = { name: nickname, buyIn: 0, cashOut: 0 };
+          }
+          playerMap[nickname].buyIn += buyIn;
+          playerMap[nickname].cashOut += buyOut;
+        }
+
+        const importedPlayers = Object.values(playerMap).map(p => ({
+          name: p.name,
+          buyIn: p.buyIn,
+          cashOut: p.cashOut,
+          result: p.cashOut - p.buyIn
+        }));
+
+        importedPlayers.forEach(ip => {
+          const existing = players.find(p => p.name === ip.name);
+          if (existing) {
+            existing.buyIn += ip.buyIn;
+            existing.cashOut += ip.cashOut;
+            existing.result = existing.cashOut - existing.buyIn;
+          } else {
+            players.push(ip);
+          }
+        });
+
+        renderPlayers();
+        infoDiv.textContent = `Загружено ${Object.keys(playerMap).length} игроков. Разделитель: "${decimalSeparator}"`;
+        document.getElementById('exportBtn').disabled = players.length < 2;
+      } catch (err) {
+        errorDiv.textContent = 'Ошибка при обработке CSV: ' + err.message;
+        console.error(err);
+      }
+    };
+    reader.onerror = () => {
+      document.getElementById('error').textContent = 'Не удалось прочитать файл.';
+    };
+    reader.readAsText(file, 'UTF-8');
+  }
+
+  // === ЛЕНИВАЯ ЗАГРУЗКА SHEETJS + ЭКСПОРТ ===
+  let sheetJSPromise = null;
+
+  function loadSheetJS() {
+    if (window.XLSX) return Promise.resolve();
+    if (sheetJSPromise) return sheetJSPromise;
+
+    sheetJSPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js';
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('Не удалось загрузить библиотеку экспорта.'));
+      document.head.appendChild(script);
+    });
+    return sheetJSPromise;
+  }
+
+  async function exportToExcel() {
+    const errorDiv = document.getElementById('error');
+    errorDiv.textContent = '';
+
+    try {
+      await loadSheetJS();
+    } catch (e) {
+      errorDiv.textContent = e.message;
+      return;
+    }
+
+    try {
+      const wb = XLSX.utils.book_new();
+      const sortedForExport = [...players].sort((a, b) => b.result - a.result);
+      const dataSheet = sortedForExport.map(p => [
+        p.name,
+        p.buyIn,
+        p.cashOut,
+        p.result
+      ]);
+      const wsData = XLSX.utils.aoa_to_sheet([
+        ["Игрок", "Бай-ин (Σ)", "Кэш-аут (Σ)", "Результат"],
+        ...dataSheet
+      ]);
+      XLSX.utils.book_append_sheet(wb, wsData, "Исходные данные");
+
+      const calcRows = [["Статус", transactions.length === 0 ? "Все в расчёте" : "См. переводы"]];
+      if (transactions.length > 0) {
+        calcRows.push([]);
+        calcRows.push(["Кто платит", "Кому получает", "Сумма"]);
+        transactions.forEach(t => {
+          calcRows.push([t.from, t.to, t.amount]);
+        });
+      }
+      const wsCalc = XLSX.utils.aoa_to_sheet(calcRows);
+      XLSX.utils.book_append_sheet(wb, wsCalc, "Расчёты");
+
+      XLSX.writeFile(wb, "взаиморасчёты_финал.xlsx");
+    } catch (e) {
+      errorDiv.textContent = "Ошибка при создании Excel: " + e.message;
+      console.error(e);
+    }
+  }
+
+  // Поддержка Enter
+  ['playerName', 'buyIn', 'cashOut'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('keypress', e => {
+        if (e.key === 'Enter') addPlayer();
+      });
+    }
+  });
+</script>
+
+</body>
+</html>
