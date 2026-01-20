@@ -290,7 +290,7 @@
 
     if (Math.abs(totalResult) > tolerance) {
       if (totalResult < -tolerance) {
-        errorDiv.innerHTML = `❗ <strong>Избыток</strong>: игроки вывели на ${(-totalResult).toFixed(2)} ₽ больше, чем внесли.<br>
+        errorDiv.innerHTML = `❗ <strong>Избыток</strong>: игроки внесли на ${(-totalResult).toFixed(2)} ₽ больше, чем вывели.<br>
           Это может означать ошибку в данных. Расчёты выполнены, но могут быть некорректны.`;
       } else {
         errorDiv.innerHTML = `❗ <strong>Недостача</strong>: игроки вывели на ${totalResult.toFixed(2)} ₽ меньше, чем внесли.<br>
