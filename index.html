@@ -317,7 +317,6 @@
     if (transactions.length === 0) {
       html += '<p>Все в расчёте!</p>';
     } else {
-      html += `<p>Минимальное число транзакций: <strong>${transactions.length}</strong></p>`;
       html += '<ul>';
       transactions.forEach(t => {
         html += `<li><strong>${t.from}</strong> → <strong>${t.to}</strong>: ${t.amount.toFixed(2)} ₽</li>`;
@@ -326,7 +325,7 @@
 
       // === ДОПОЛНИТЕЛЬНАЯ СВОДКА ===
       const creditors = players.filter(p => p.result > 0.001).sort((a, b) => b.result - a.result);
-      const debtors = players.filter(p => p.result < -0.001).sort((a, b) => a.result - b.result); // самые отрицательные
+      const debtors = players.filter(p => p.result < -0.001).sort((a, b) => a.result - b.result);
 
       if (creditors.length > 0) {
         html += `<div class="summary-box"><strong>Кому должны вернуть (недостача у них):</strong><br>`;
@@ -339,7 +338,7 @@
       if (debtors.length > 0) {
         html += `<div class="summary-box red"><strong>Кто должен вернуть (избыток у них):</strong><br>`;
         debtors.forEach(p => {
-          html += `${p.name}: ${p.result.toFixed(2)} ₽<br>`; // отрицательное число
+          html += `${p.name}: ${p.result.toFixed(2)} ₽<br>`;
         });
         html += `</div>`;
       }
