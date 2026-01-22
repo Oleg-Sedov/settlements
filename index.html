@@ -59,17 +59,6 @@
     .positive { color: green; font-weight: bold; }
     .negative { color: red; font-weight: bold; }
     .zero { color: black; }
-    .summary-box {
-      margin-top: 15px;
-      padding: 12px;
-      background-color: #e8f5e9;
-      border-radius: 5px;
-      border-left: 4px solid #2e7d32;
-    }
-    .summary-box.red {
-      background-color: #ffebee;
-      border-left-color: #c62828;
-    }
   </style>
 </head>
 <body>
@@ -168,7 +157,7 @@
       tx.push({
         from: debtor.name,
         to: creditor.name,
-        amount: parseFloat(amount.toFixed(2))
+        amount: Math.round(amount) // Целое число
       });
       debtor.amount -= amount;
       creditor.amount -= amount;
@@ -255,7 +244,7 @@
         allTransactions.push({
           from: debtor.name,
           to: creditor.name,
-          amount: parseFloat(amount.toFixed(2))
+          amount: Math.round(amount) // Целое число
         });
 
         debtor.amount -= amount;
@@ -290,10 +279,10 @@
 
     if (Math.abs(totalResult) > tolerance) {
       if (totalResult < -tolerance) {
-        errorDiv.innerHTML = `❗ <strong>Избыток</strong>: игроки внесли на ${(-totalResult).toFixed(2)} ₽ больше, чем вывели.<br>
+        errorDiv.innerHTML = `❗ <strong>Избыток</strong>: игроки внесли на ${Math.round(-totalResult)} больше, чем вывели.<br>
           Это может означать ошибку в данных. Расчёты выполнены, но могут быть некорректны.`;
       } else {
-        errorDiv.innerHTML = `❗ <strong>Недостача</strong>: игроки вывели на ${totalResult.toFixed(2)} ₽ меньше, чем внесли.<br>
+        errorDiv.innerHTML = `❗ <strong>Недостача</strong>: игроки вывели на ${Math.round(totalResult)} меньше, чем внесли.<br>
           Это может означать ошибку в данных. Расчёты выполнены, но могут быть некорректны.`;
       }
       errorDiv.style.display = 'block';
@@ -328,7 +317,7 @@
     } else {
       html += '<ul>';
       transactions.forEach(t => {
-        html += `<li><strong>${t.from}</strong> → <strong>${t.to}</strong>: ${t.amount.toFixed(2)} ₽</li>`;
+        html += `<li><strong>${t.from}</strong> → <strong>${t.to}</strong>: ${t.amount}</li>`;
       });
       html += '</ul>';
     }
@@ -353,12 +342,12 @@
 
       const row = tbody.insertRow();
       row.insertCell(0).textContent = player.name;
-      row.insertCell(1).textContent = player.buyIn.toFixed(2);
-      row.insertCell(2).textContent = player.cashOut.toFixed(2);
+      row.insertCell(1).textContent = Math.round(player.buyIn);
+      row.insertCell(2).textContent = Math.round(player.cashOut);
 
       const resultCell = row.insertCell(3);
       const resultValue = player.result;
-      resultCell.textContent = resultValue.toFixed(2);
+      resultCell.textContent = Math.round(resultValue);
       if (resultValue > 0.001) resultCell.className = 'positive';
       else if (resultValue < -0.001) resultCell.className = 'negative';
       else resultCell.className = 'zero';
@@ -523,8 +512,6 @@
       errorDiv.textContent = 'Ошибка при обработке CSV: ' + err.message;
       errorDiv.style.display = 'block';
       console.error(err);
-      // Восстанавливаем предыдущее состояние? Нет — CSV должен заменять всё.
-      // Если ошибка — players остаётся пустым (или частично заполненным, но лучше не восстанавливать)
     }
   };
   reader.onerror = () => {
@@ -543,6 +530,7 @@
 
     sheetJSPromise = new Promise((resolve, reject) => {
       const script = document.createElement('script');
+      // УБРАНЫ ПРОБЕЛЫ В КОНЦЕ URL!
       script.src = 'https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js';
       script.onload = () => resolve();
       script.onerror = () => reject(new Error('Не удалось загрузить библиотеку экспорта.'));
@@ -569,9 +557,9 @@
       const sortedForExport = [...players].sort((a, b) => b.result - a.result);
       const dataSheet = sortedForExport.map(p => [
         p.name,
-        p.buyIn,
-        p.cashOut,
-        p.result
+        Math.round(p.buyIn),
+        Math.round(p.cashOut),
+        Math.round(p.result)
       ]);
       const wsData = XLSX.utils.aoa_to_sheet([
         ["Игрок", "Бай-ин", "Кэш-аут", "Результат"],
@@ -584,7 +572,7 @@
         calcRows.push([]);
         calcRows.push(["Кто платит", "Кому платит", "Сумма"]);
         transactions.forEach(t => {
-          calcRows.push([t.from, t.to, t.amount]);
+          calcRows.push([t.from, t.to, t.amount]); // Уже целые числа
         });
       }
       const wsCalc = XLSX.utils.aoa_to_sheet(calcRows);
